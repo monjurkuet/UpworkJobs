@@ -55,15 +55,17 @@ SEARCH_API_URL='https://www.upwork.com/search/jobs/url'
 
 driver=GetDriver()
 
-for i in range(1,5):
-   driver.get(SEARCH_URL+f'&page={i}')
-   time.sleep(5)
-   if i==1:
-      driver.find_element('xpath','//div[@class="up-dropdown jobs-per-page"]').click()
+while True:
+   for i in range(1,5):
+      driver.get(SEARCH_URL+f'&page={i}')
       time.sleep(5)
-      driver.find_elements('xpath','//div[@class="up-dropdown-menu"]//li')[-1].click()
+      if i==1:
+         driver.find_element('xpath','//div[@class="up-dropdown jobs-per-page"]').click()
+         time.sleep(5)
+         driver.find_elements('xpath','//div[@class="up-dropdown-menu"]//li')[-1].click()
+         time.sleep(5)
+      ExtractData(driver)
       time.sleep(5)
-   ExtractData(driver)
-   time.sleep(5)
+   time.sleep(300)
 
 conn.close()
