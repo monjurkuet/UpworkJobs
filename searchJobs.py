@@ -1,21 +1,69 @@
-import feedparser
-from dateutil.parser import parse
-from datetime import datetime, timezone 
+import undetected_chromedriver as uc
 import json
-import requests
+import sqlite3
 import time
-from config import FEED_LIST
 
-for feed_url in FEED_LIST:
-    response=feedparser.parse(feed_url)
-    for entry in response.entries: 
-      id=entry['id'] 
-      if id not in data_into_list:  
-         createdAt=entry['updated']
-         if (datetime.now(timezone.utc) - parse(createdAt, ignoretz=False)).seconds<600:
-            write_file(id)
-            print(entry)
-            webhook_json={'text': 'Link: {link}, Job Title: {jobtitle}, Job Details: {jobdetails}'.format(link=entry['link'] ,jobtitle=entry['title'],jobdetails=entry['summary']),}
-            requests.post(slack_hook,json=webhook_json)
-         print('Sleeping.......')   
-         time.sleep(60)  
+def GetDriver():
+   options = uc.ChromeOptions() 
+   caps = options.to_capabilities()
+   caps['goog:loggingPrefs'] = {'performance': 'ALL'} 
+   return uc.Chrome(headless=False,options=options,desired_capabilities=caps) 
+
+def clean_logs(driver,logs,target_url):
+   for log in logs:
+      try:
+         resp_url = log["params"]["response"]["url"]
+         if target_url in resp_url:
+               request_id = log["params"]["requestId"]
+               response_body=driver.execute_cdp_cmd("Network.getResponseBody", {"requestId": request_id})
+               response_json=json.loads(response_body['body'])
+               return response_json
+      except:
+         pass   
+   return None
+
+def ExtractData(driver):
+   logs_raw = driver.get_log("performance")     
+   logs = [json.loads(lr["message"])["message"] for lr in logs_raw]
+   response_json=clean_logs(driver,logs,SEARCH_API_URL)
+   searchResults=response_json['searchResults']['jobs']
+   for eachJob in searchResults:
+      title=eachJob['title']
+      createdOn=eachJob['createdOn']
+      amount=eachJob['amount']['amount']
+      skillList=', '.join(i['prettyName'] for i in eachJob['attrs'])
+      description=eachJob['description']
+      hourlyBudget=f"{eachJob['hourlyBudget']['min']}-{eachJob['hourlyBudget']['max']}"
+      duration=eachJob['duration']
+      engagement=eachJob['engagement']
+      enterpriseJob=eachJob['enterpriseJob']
+      category=f"{eachJob['occupations']['category']['prefLabel']}, {eachJob['occupations']['oservice']['prefLabel']}, {', '.join(i['prefLabel'] for i in eachJob['occupations']['subcategories'])}"
+      ciphertext=eachJob['ciphertext']
+      # Insert the data into the "PostedJobs" table
+      cursor.execute('''INSERT OR IGNORE INTO PostedJobs (title, createdOn, amount, skillList, description, hourlyBudget, duration, engagement, enterpriseJob, category, ciphertext)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                     (title, createdOn, amount, skillList, description, hourlyBudget, duration, engagement, enterpriseJob, category, ciphertext))
+      print(title, createdOn, amount, skillList, description, hourlyBudget, duration, engagement, enterpriseJob, category, ciphertext)
+   driver.get_log("performance")  
+   conn.commit()
+
+conn = sqlite3.connect('database.db')
+cursor = conn.cursor()
+
+SEARCH_URL='https://www.upwork.com/nx/jobs/search/?sort=recency&or_terms=scrape%20crawl'
+SEARCH_API_URL='https://www.upwork.com/search/jobs/url'
+
+driver=GetDriver()
+
+for i in range(1,5):
+   driver.get(SEARCH_URL+f'&page={i}')
+   time.sleep(5)
+   if i==1:
+      driver.find_element('xpath','//div[@class="up-dropdown jobs-per-page"]').click()
+      time.sleep(5)
+      driver.find_elements('xpath','//div[@class="up-dropdown-menu"]//li')[-1].click()
+      time.sleep(5)
+   ExtractData(driver)
+   time.sleep(5)
+
+conn.close()
