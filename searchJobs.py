@@ -55,7 +55,7 @@ SEARCH_API_URL='https://www.upwork.com/search/jobs/url'
 
 while True:
    driver=GetDriver()
-   driver.set_window_position(-2000,0)
+   driver.set_window_position(0,0)
    for i in range(1,5):
       try:
          driver.get(SEARCH_URL+f'&page={i}')
